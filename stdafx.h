@@ -26,3 +26,6 @@
 #include <thread>
 #include <mutex>
 #include <future>
+#include <iterator>
+#include <cassert>
+#include <numeric>
