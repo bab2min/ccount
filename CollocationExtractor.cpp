@@ -54,7 +54,7 @@ vector<CollocationExtractor::Collocation> CollocationExtractor::getCollocations(
 			if (ch.first == 0) // for unknown words
 			{
 				float p = ch.second.first / (float)value.first;
-				entropy = -log(p / 5) * p;
+				entropy = -log(p / 3) * p;
 			}
 			else 
 			{
