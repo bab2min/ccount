@@ -5,6 +5,7 @@
 #include "ThreadPool.hpp"
 #include "cxxopts.hpp"
 #include "utils.h"
+#include "CollocationExtractor.h"
 
 using namespace std;
 
@@ -57,7 +58,7 @@ struct Args
 	size_t maxline = -1;
 	int worker = thread::hardware_concurrency();
 	size_t threshold = 100;
-	string pmi;
+	string pmi, cll;
 };
 
 void cooc(const Args& args)
@@ -406,8 +407,73 @@ void pmiCoherence(const Args& args)
 	cout << "========" << endl << "Total Average PMI: " << avgPMI / totCnt << endl;
 }
 
+void colloc(const Args& args)
+{
+	CollocationExtractor colExt(5);
+	ifstream infile{ args.input };
+	cerr << "Scanning..." << endl;
+	auto fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+			
+		stringstream ss{ f };
+		colExt.countWords(istream_iterator<string>{ss}, istream_iterator<string>{});
+	});
+
+	colExt.shrinkDict(args.threshold);
+
+	cerr << "Counting..." << endl;
+	infile.clear();
+	infile.seekg(0);
+	fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+		stringstream ss{ f };
+		colExt.countNgrams(istream_iterator<string>{ss}, istream_iterator<string>{});
+	});
+
+	cerr << "Calculating..." << endl;
+	colExt.updateCohesion();
+	auto printResult = [&](ostream& out)
+	{
+		for (auto& c : colExt.getCollocations(args.threshold, -50))
+		{
+			if (find(c.words.begin(), c.words.end(), colExt.getUNKWord()) != c.words.end()) continue;
+
+			for (auto& p : c.words)
+			{
+				out << *p << ' ';
+			}
+			out << '\t' << c.score << '\t' << c.cnt << '\t' << c.logCohesion << '\t' << c.entropy << endl;
+		}
+	};
+	if (args.output.empty()) printResult(cout);
+	else
+	{
+		printResult(ofstream{ args.output });
+	}
+}
+
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+	SetConsoleOutputCP(CP_UTF8);
+	setvbuf(stdout, nullptr, _IOFBF, 1000);
+#endif
 	Args args;
 	try
 	{
@@ -417,6 +483,8 @@ int main(int argc, char* argv[])
 			.show_positional_help();
 		auto vpmi = cxxopts::value<string>();
 		vpmi->implicit_value("pmi");
+		auto vcll = cxxopts::value<string>();
+		vcll->implicit_value("cll");
 		options.add_options()
 			("i,input", "Input File", cxxopts::value<string>(), "Input file path that contains documents per line")
 			("m,model", "Model File", cxxopts::value<string>(), "Input model file path")
@@ -427,6 +495,7 @@ int main(int argc, char* argv[])
 			("h,help", "Help")
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
 			("pmi", "Calculate pointwise mutual informations", vpmi)
+			("cll", "Collocation", vcll)
 			;
 
 		options.parse_positional({ "input", "field", "threshold" });
@@ -451,6 +520,7 @@ int main(int argc, char* argv[])
 			READ_OPT(output, string);
 			READ_OPT(model, string);
 			READ_OPT(pmi, string);
+			READ_OPT(cll, string);
 			READ_OPT(field, int);
 			READ_OPT(maxline, int);
 			READ_OPT(worker, int);
@@ -470,12 +540,19 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	if (args.pmi.empty()) cooc(args);
-	else
+	if (!args.cll.empty())
+	{
+		colloc(args);
+	}
+	else if (!args.pmi.empty())
 	{
 		if (args.pmi == "pmi") pmi(args);
-		else if(args.pmi == "show") pmiShow(args);
+		else if (args.pmi == "show") pmiShow(args);
 		else if (args.pmi == "ch") pmiCoherence(args);
+	}
+	else
+	{
+		cooc(args);
 	}
     return 0;
 }

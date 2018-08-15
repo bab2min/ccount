@@ -17,6 +17,13 @@ public:
 		std::swap(id2word, o.id2word);
 	}
 
+	WordDictionary& operator=(WordDictionary&& o)
+	{
+		std::swap(word2id, o.word2id);
+		std::swap(id2word, o.id2word);
+		return *this;
+	}
+
 	enum { npos = (size_t)-1 };
 	int add(const std::string& str)
 	{
@@ -53,7 +60,7 @@ public:
 		return npos;
 	}
 
-	std::string getStr(int id) const
+	const std::string& getStr(int id) const
 	{
 		return id2word[id];
 	}
@@ -93,8 +100,8 @@ public:
 };
 
 
-template<class LocalDataType>
-std::vector<LocalDataType> scanText(std::istream& input, size_t worker, size_t maxLine, const std::function<void(LocalDataType&, std::string, size_t)>& func, const LocalDataType& ldInitVal = {})
+template<class LocalDataType, class Func>
+std::vector<LocalDataType> scanText(std::istream& input, size_t worker, size_t maxLine, const Func& func, const LocalDataType& ldInitVal = {})
 {
 	ThreadPool pool(worker);
 	std::vector<LocalDataType> ld(worker, ldInitVal);
@@ -105,7 +112,7 @@ std::vector<LocalDataType> scanText(std::istream& input, size_t worker, size_t m
 	{
 		futures[numLine % futures.size()] = pool.enqueue([&ld, doc, &func](size_t tId, size_t nLine)
 		{
-			if (tId == 0) std::cerr << "Line " << nLine << std::endl;
+			if (tId == 0 && nLine % 79 == 0) std::cerr << "Line " << nLine << std::endl;
 			return func(ld[tId], doc, nLine);
 		}, numLine + 1);
 		numLine++;
