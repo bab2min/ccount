@@ -50,8 +50,16 @@ vector<CollocationExtractor::Collocation> CollocationExtractor::getCollocations(
 		for (auto it = be.first; it != be.second; ++it)
 		{
 			auto ch = *it;
-			float p = ch.second.first / (float)value.first;
-			entropy = -log(p) * p;
+			if (ch.first == 0) // for unknown words
+			{
+				float p = 2.f / value.first;
+				entropy = -log(p) * p * (ch.second.first / 2.f);
+			}
+			else 
+			{
+				float p = ch.second.first / (float)value.first;
+				entropy = -log(p) * p;
+			}
 		}
 		float score = value.second + log(entropy + 1e-10f);
 		if(score < minScore) return vtm_traverse_ret::keep_go;
