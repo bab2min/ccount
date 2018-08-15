@@ -47,19 +47,18 @@ vector<CollocationExtractor::Collocation> CollocationExtractor::getCollocations(
 		if (value.first * key.size() < minCnt) return vtm_traverse_ret::skip_children;
 		auto be = treeCnt.findChild(key.begin(), key.end());
 		float entropy = 0;
-		size_t unitUnk = max(5, (int)sqrt(minCnt / 2));
 		for (auto it = be.first; it != be.second; ++it)
 		{
 			auto ch = *it;
 			if (ch.first == 0) // for unknown words
 			{
 				float p = ch.second.first / (float)value.first;
-				entropy = -log(p / 3) * p;
+				entropy += -log(p / 4) * p;
 			}
 			else 
 			{
 				float p = ch.second.first / (float)value.first;
-				entropy = -log(p) * p;
+				entropy += -log(p) * p;
 			}
 		}
 		float score = value.second + log(entropy + 1e-10f);
