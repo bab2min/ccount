@@ -58,7 +58,7 @@ struct Args
 	size_t maxline = -1;
 	int worker = thread::hardware_concurrency();
 	size_t threshold = 100;
-	string pmi, cll;
+	string pmi, cll, mode;
 };
 
 void cooc(const Args& args)
@@ -464,6 +464,79 @@ void colloc(const Args& args)
 	}
 }
 
+
+void simpleCount(const Args& args)
+{
+	struct LD
+	{
+		vector<uint32_t> freq;
+		size_t nDocs = 0;
+	};
+	size_t totDocs = 0;
+	ifstream infile{ args.input };
+	cerr << "Scanning..." << endl;
+	WordDictionary dict;
+	auto fcnt = scanText<LD>(infile, args.worker, args.maxline, [&dict, &args](LD& ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+		istringstream ss{ f };
+		auto ids = dict.getOrAdds(istream_iterator<string>{ss}, istream_iterator<string>{});
+		size_t maxId = *max_element(ids.begin(), ids.end());
+		if (maxId >= ld.freq.size()) ld.freq.resize(maxId + 1);
+		for (auto id : ids)
+		{
+			++ld.freq[id];
+		}
+		++ld.nDocs;
+	});
+	auto&& freq = fcnt[0].freq;
+	totDocs = fcnt[0].nDocs;
+	for (size_t i = 1; i < fcnt.size(); ++i)
+	{
+		if (freq.size() < fcnt[i].freq.size()) freq.resize(fcnt[i].freq.size());
+		auto it = freq.begin();
+		for (auto&& p : fcnt[i].freq)
+		{
+			*it++ += p;
+		}
+		totDocs += fcnt[i].nDocs;
+	}
+
+	vector<pair<size_t, size_t>> countSorted;
+	for (size_t i = 0; i < freq.size(); ++i)
+	{
+		countSorted.emplace_back(i, freq[i]);
+	}
+	sort(countSorted.begin(), countSorted.end(), [](const auto& a, const auto& b)
+	{
+		return a.second > b.second;
+	});
+
+	auto printResult = [&](ostream& out)
+	{
+		out << "<Total>\t" << accumulate(countSorted.begin(), countSorted.end(), 0, [](auto a, const auto& b) 
+		{
+			return a + b.second;
+		}) << endl;
+		for (auto&& p : countSorted)
+		{
+			if (p.second < args.threshold) break;
+			out << dict.getStr(p.first) << '\t' << p.second << endl;
+		}
+	};
+	if (args.output.empty()) printResult(cout);
+	else
+	{
+		printResult(ofstream{ args.output });
+	}
+}
+
+
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -496,6 +569,7 @@ int main(int argc, char* argv[])
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
 			("pmi", "Calculate pointwise mutual informations", vpmi)
 			("cll", "Collocation", vcll)
+			("mode", "Mode (count, ccount)", cxxopts::value<string>())
 			;
 
 		options.parse_positional({ "input", "field", "threshold" });
@@ -521,6 +595,7 @@ int main(int argc, char* argv[])
 			READ_OPT(model, string);
 			READ_OPT(pmi, string);
 			READ_OPT(cll, string);
+			READ_OPT(mode, string);
 			READ_OPT(field, int);
 			READ_OPT(maxline, int);
 			READ_OPT(worker, int);
@@ -540,7 +615,11 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	if (!args.cll.empty())
+	if (args.mode == "count")
+	{
+		simpleCount(args);
+	}
+	else if (!args.cll.empty())
 	{
 		colloc(args);
 	}
