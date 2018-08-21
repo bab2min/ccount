@@ -58,7 +58,7 @@ struct Args
 	size_t maxline = -1;
 	int worker = thread::hardware_concurrency();
 	size_t threshold = 100;
-	string pmi, cll, mode;
+	string mode;
 };
 
 void cooc(const Args& args)
@@ -364,7 +364,8 @@ void pmiShow(const Args& args)
 	if (args.output.empty()) printResult(cout);
 	else
 	{
-		printResult(ofstream{ args.output });
+		ofstream of{ args.output };
+		printResult(of);
 	}
 }
 
@@ -460,7 +461,8 @@ void colloc(const Args& args)
 	if (args.output.empty()) printResult(cout);
 	else
 	{
-		printResult(ofstream{ args.output });
+		ofstream of{ args.output };
+		printResult(of);
 	}
 }
 
@@ -532,7 +534,8 @@ void simpleCount(const Args& args)
 	if (args.output.empty()) printResult(cout);
 	else
 	{
-		printResult(ofstream{ args.output });
+		ofstream of{ args.output };
+		printResult(of);
 	}
 }
 
@@ -550,9 +553,9 @@ int main(int argc, char* argv[])
 	Args args;
 	try
 	{
-		cxxopts::Options options("cooc", "Cooccurrence Counter for Multi-core CPU");
+		cxxopts::Options options("ccount", "Cooccurrence Counter for Multi-core CPU");
 		options
-			.positional_help("[input field threshold]")
+			.positional_help("[mode input field threshold]")
 			.show_positional_help();
 		auto vpmi = cxxopts::value<string>();
 		vpmi->implicit_value("pmi");
@@ -567,12 +570,10 @@ int main(int argc, char* argv[])
 			("t,threshold", "Minimum number ", cxxopts::value<int>())
 			("h,help", "Help")
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
-			("pmi", "Calculate pointwise mutual informations", vpmi)
-			("cll", "Collocation", vcll)
-			("mode", "Mode (count, ccount)", cxxopts::value<string>())
+			("mode", "Mode (count, cooccur, colloc, pmi, pmishow, pmich)", cxxopts::value<string>())
 			;
 
-		options.parse_positional({ "input", "field", "threshold" });
+		options.parse_positional({ "mode", "input", "field", "threshold" });
 
 		try
 		{
@@ -593,8 +594,6 @@ int main(int argc, char* argv[])
 			READ_OPT(input, string);
 			READ_OPT(output, string);
 			READ_OPT(model, string);
-			READ_OPT(pmi, string);
-			READ_OPT(cll, string);
 			READ_OPT(mode, string);
 			READ_OPT(field, int);
 			READ_OPT(maxline, int);
@@ -615,24 +614,12 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	if (args.mode == "count")
-	{
-		simpleCount(args);
-	}
-	else if (!args.cll.empty())
-	{
-		colloc(args);
-	}
-	else if (!args.pmi.empty())
-	{
-		if (args.pmi == "pmi") pmi(args);
-		else if (args.pmi == "show") pmiShow(args);
-		else if (args.pmi == "ch") pmiCoherence(args);
-	}
-	else
-	{
-		cooc(args);
-	}
+	if (args.mode == "count") simpleCount(args);
+	else if (args.mode == "colloc") colloc(args);
+	else if (args.mode == "pmi") pmi(args);
+	else if (args.mode == "pmishow") pmiShow(args);
+	else if (args.mode == "pmich") pmiCoherence(args);
+	else cooc(args);
     return 0;
 }
 

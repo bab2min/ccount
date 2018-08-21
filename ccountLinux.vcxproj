@@ -85,13 +85,17 @@
     <TargetExt />
   </PropertyGroup>
   <ItemGroup>
-    <ClCompile Include="CooccurrenceCounter.cpp" />
+    <ClCompile Include="CollocationExtractor.cpp" />
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CollocationExtractor.h" />
     <ClInclude Include="cxxopts.hpp" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ThreadPool.hpp" />
+    <ClInclude Include="utils.h" />
+    <ClInclude Include="vectorTreeMap.hpp" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
