@@ -30,3 +30,5 @@
 #include <iterator>
 #include <cassert>
 #include <numeric>
+#include <locale>
+#include <codecvt>

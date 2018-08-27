@@ -158,7 +158,6 @@
     <ClInclude Include="vectorTreeMap.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CollocationExtractor.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

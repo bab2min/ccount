@@ -59,6 +59,7 @@ struct Args
 	int worker = thread::hardware_concurrency();
 	size_t threshold = 100;
 	string mode;
+	int maxng = 5;
 };
 
 void cooc(const Args& args)
@@ -66,12 +67,12 @@ void cooc(const Args& args)
 	typedef unordered_map<size_t, size_t> LDFreqCount;
 	typedef vector<uint32_t> LDCoocCount;
 
-	WordDictionary rdict;
+	WordDictionary<> rdict;
 	size_t nVocab = 0;
 	ifstream infile{ args.input };
 	cerr << "Scanning..." << endl;
 	{
-		WordDictionary dict;
+		WordDictionary<> dict;
 		auto fcnt = scanText<LDFreqCount>(infile, args.worker, args.maxline, [&dict, &args](LDFreqCount& ld, string line, size_t numLine)
 		{
 			auto f = selectField(line, args.field);
@@ -184,14 +185,14 @@ void pmi(const Args& args)
 		vector<uint32_t> freq;
 		size_t nDocs = 0;
 	};
-	WordDictionary rdict;
+	WordDictionary<> rdict;
 	vector<uint32_t> wordFreq;
 	size_t totDocs = 0;
 	size_t nVocab = 0;
 	ifstream infile{ args.input };
 	cerr << "Scanning..." << endl;
 	{
-		WordDictionary dict;
+		WordDictionary<> dict;
 		auto fcnt = scanText<LD>(infile, args.worker, args.maxline, [&dict, &args](LD& ld, string line, size_t numLine)
 		{
 			auto f = selectField(line, args.field);
@@ -320,7 +321,7 @@ void pmi(const Args& args)
 
 struct PMIData
 {
-	WordDictionary dict;
+	WordDictionary<> dict;
 	vector<int16_t> pmis;
 	size_t nVocab = 0;
 };
@@ -410,9 +411,10 @@ void pmiCoherence(const Args& args)
 
 void colloc(const Args& args)
 {
-	CollocationExtractor colExt(5);
+	CollocationExtractor<false> colExt(args.maxng);
 	ifstream infile{ args.input };
 	cerr << "Scanning..." << endl;
+	
 	auto fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
 	{
 		auto f = selectField(line, args.field);
@@ -421,7 +423,7 @@ void colloc(const Args& args)
 			cerr << "Line " << numLine << ": no field..." << endl;
 			return;
 		}
-			
+
 		stringstream ss{ f };
 		colExt.countWords(istream_iterator<string>{ss}, istream_iterator<string>{});
 	});
@@ -453,7 +455,74 @@ void colloc(const Args& args)
 
 			for (auto& p : c.words)
 			{
-				out << *p << ' ';
+				out << colExt.toString(p) << ' ';
+			}
+			out << '\t' << c.score << '\t' << c.cnt << '\t' << c.logCohesion << '\t' << c.entropy << endl;
+		}
+	};
+	if (args.output.empty()) printResult(cout);
+	else
+	{
+		ofstream of{ args.output };
+		printResult(of);
+	}
+}
+
+
+void collocChr(const Args& args)
+{
+	CollocationExtractor<true> colExt(args.maxng);
+	ifstream infile{ args.input };
+	cerr << "Scanning..." << endl;
+
+	auto fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+		stringstream ss{ f };
+		for (auto it = istream_iterator<string>{ ss }; it != istream_iterator<string>{}; ++it)
+		{
+			auto ustr = wstring_convert<codecvt_utf8<int32_t>, int32_t>{}.from_bytes(*it);
+			colExt.countWords(ustr.begin(), ustr.end());
+		}
+	});
+
+	colExt.shrinkDict(args.threshold);
+
+	cerr << "Counting..." << endl;
+	infile.clear();
+	infile.seekg(0);
+	fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+		stringstream ss{ f };
+		for (auto it = istream_iterator<string>{ ss }; it != istream_iterator<string>{}; ++it)
+		{
+			auto ustr = wstring_convert<codecvt_utf8<int32_t>, int32_t>{}.from_bytes(*it);
+			colExt.countNgrams(ustr.begin(), ustr.end());
+		}
+	});
+
+	cerr << "Calculating..." << endl;
+	colExt.updateCohesion();
+	auto printResult = [&](ostream& out)
+	{
+		for (auto& c : colExt.getCollocations(args.threshold, -50))
+		{
+			if (find(c.words.begin(), c.words.end(), colExt.getUNKWord()) != c.words.end()) continue;
+
+			for (auto& p : c.words)
+			{
+				out << colExt.toString(p);
 			}
 			out << '\t' << c.score << '\t' << c.cnt << '\t' << c.logCohesion << '\t' << c.entropy << endl;
 		}
@@ -477,7 +546,7 @@ void simpleCount(const Args& args)
 	size_t totDocs = 0;
 	ifstream infile{ args.input };
 	cerr << "Scanning..." << endl;
-	WordDictionary dict;
+	WordDictionary<> dict;
 	auto fcnt = scanText<LD>(infile, args.worker, args.maxline, [&dict, &args](LD& ld, string line, size_t numLine)
 	{
 		auto f = selectField(line, args.field);
@@ -570,7 +639,8 @@ int main(int argc, char* argv[])
 			("t,threshold", "Minimum number ", cxxopts::value<int>())
 			("h,help", "Help")
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
-			("mode", "Mode (count, cooccur, colloc, pmi, pmishow, pmich)", cxxopts::value<string>())
+			("mode", "Mode (count, cooccur, colloc, collocChr, pmi, pmishow, pmich)", cxxopts::value<string>())
+			("maxng",  "Max NGram Length", cxxopts::value<int>())
 			;
 
 		options.parse_positional({ "mode", "input", "field", "threshold" });
@@ -599,6 +669,7 @@ int main(int argc, char* argv[])
 			READ_OPT(maxline, int);
 			READ_OPT(worker, int);
 			READ_OPT(threshold, int);
+			READ_OPT(maxng, int);
 		}
 		catch (const cxxopts::OptionException& e)
 		{
@@ -616,6 +687,7 @@ int main(int argc, char* argv[])
 
 	if (args.mode == "count") simpleCount(args);
 	else if (args.mode == "colloc") colloc(args);
+	else if (args.mode == "collocChr") collocChr(args);
 	else if (args.mode == "pmi") pmi(args);
 	else if (args.mode == "pmishow") pmiShow(args);
 	else if (args.mode == "pmich") pmiCoherence(args);

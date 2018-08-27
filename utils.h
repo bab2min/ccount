@@ -1,11 +1,12 @@
 #pragma once
 #include "ThreadPool.hpp"
 
+template<class KeyType = std::string>
 class WordDictionary
 {
 protected:
-	std::map<std::string, int> word2id;
-	std::vector<std::string> id2word;
+	std::map<KeyType, int> word2id;
+	std::vector<KeyType> id2word;
 	std::mutex mtx;
 public:
 
@@ -25,13 +26,13 @@ public:
 	}
 
 	enum { npos = (size_t)-1 };
-	int add(const std::string& str)
+	int add(const KeyType& str)
 	{
 		if (word2id.emplace(str, word2id.size()).second) id2word.emplace_back(str);
 		return word2id.size() - 1;
 	}
 
-	int getOrAdd(const std::string& str)
+	int getOrAdd(const KeyType& str)
 	{
 		std::lock_guard<std::mutex> lg(mtx);
 		auto it = word2id.find(str);
@@ -53,14 +54,14 @@ public:
 		return ret;
 	}
 
-	int get(const std::string& str) const
+	int get(const KeyType& str) const
 	{
 		auto it = word2id.find(str);
 		if (it != word2id.end()) return it->second;
 		return npos;
 	}
 
-	const std::string& getStr(int id) const
+	const KeyType& getStr(int id) const
 	{
 		return id2word[id];
 	}
