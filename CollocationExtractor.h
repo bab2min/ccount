@@ -7,22 +7,28 @@ template<bool SingleChrUnit>
 class CollocationExtractor
 {
 	typedef typename std::conditional<SingleChrUnit, int32_t, std::string>::type unitType;
+	typedef vectorTreeMap<uint32_t, std::pair<uint32_t, float>> vtmap;
 private:
 	WordDictionary<unitType> vocab;
 	std::vector<uint32_t> wordCnt;
-	vectorTreeMap<uint32_t, std::pair<uint32_t, float>> treeCnt;
+	vtmap forwardCnt;
+	vtmap backwardCnt;
 	size_t totCnt = 0;
 	size_t maxLen;
 
 	std::string _toString(const unitType* ut, std::true_type) const
 	{
-		if (ut == &vocab.getStr(0)) return "<UNK>";
+		if (ut == &vocab.getStr(0)) return "<BEG>";
+		if (ut == &vocab.getStr(1)) return "<END>";
+		if (ut == &vocab.getStr(2)) return "<UNK>";
 		return std::wstring_convert<codecvt_utf8<int32_t>, int32_t>{}.to_bytes(*ut);
 	}
 
 	std::string _toString(const unitType* ut, std::false_type) const
 	{
-		if (ut == &vocab.getStr(0)) return "<UNK>";
+		if (ut == &vocab.getStr(0)) return "<BEG>";
+		if (ut == &vocab.getStr(1)) return "<END>";
+		if (ut == &vocab.getStr(2)) return "<UNK>";
 		return *ut;
 	}
 
@@ -33,10 +39,18 @@ public:
 		uint32_t cnt;
 		float logCohesion;
 		float entropy;
+		float backwardLogCohesion;
+		float backwardEntropy;
 		float score;
 
-		Collocation(const std::vector<const unitType*>& _words = {}, uint32_t _cnt = 0, float _logCohesion = 0, float _entropy = 0, float _score = 0)
-			: words(_words), cnt(_cnt), logCohesion(_logCohesion), entropy(_entropy), score(_score)
+		Collocation(const std::vector<const unitType*>& _words = {}, uint32_t _cnt = 0, 
+			float _logCohesion = 0, float _entropy = 0, 
+			float _backwardLogCohesion = 0, float _backwardEntropy = 0,
+			float _score = 0)
+			: words(_words), cnt(_cnt), 
+			logCohesion(_logCohesion), entropy(_entropy),
+			backwardLogCohesion(_backwardLogCohesion), backwardEntropy(_backwardEntropy),
+			score(_score)
 		{
 		}
 	};
@@ -57,6 +71,8 @@ public:
 	{
 		WordDictionary<unitType> tVocab;
 		tVocab.add(unitType{});
+		tVocab.add(unitType{});
+		tVocab.add(unitType{});
 		std::vector<uint32_t> tCnt(1);
 		tCnt.reserve(wordCnt.size() / 2);
 		for (size_t i = 0; i < wordCnt.size(); ++i)
@@ -75,30 +91,46 @@ public:
 	void countNgrams(Iter wBegin, Iter wEnd)
 	{
 		std::vector<int> ids;
+		ids.emplace_back(0);
 		for (auto it = wBegin; it != wEnd; ++it)
 		{
-			ids.emplace_back(std::max(vocab.get(*it), 0));
+			ids.emplace_back(std::max(vocab.get(*it), 2));
 		}
+		ids.emplace_back(1);
 
 		for (size_t i = 0; i < ids.size(); ++i)
 		{
-			for (size_t j = i + 1; j < std::min(i + maxLen + 1, ids.size()); ++j)
+			for (size_t j = i + 1; j < std::min(i + 1 + maxLen, ids.size() + 1); ++j)
 			{
-				treeCnt.at(ids.begin() + i, ids.begin() + j).first++;
+				forwardCnt.at(ids.begin() + i, ids.begin() + j).first++;
+				backwardCnt.at(ids.rbegin() + i, ids.rbegin() + j).first++;
 			}
 		}
 	}
 
 	void updateCohesion()
 	{
-		treeCnt.traverse([this](const std::vector<uint32_t>& key, std::pair<uint32_t, float>& value)
+		forwardCnt.traverse([this](const std::vector<uint32_t>& key, std::pair<uint32_t, float>& value)
 		{
 			if (key.size() <= 1)
 			{
 				value.second = 0;
 				return vtm_traverse_ret::keep_go;
 			}
-			const auto* parent = treeCnt.find(key.begin(), key.end() - 1);
+			const auto* parent = forwardCnt.find(key.begin(), key.end() - 1);
+			float ll = log(value.first / (float)parent->first);
+			value.second = (parent->second * (key.size() - 2) + ll) / (key.size() - 1);
+			return vtm_traverse_ret::keep_go;
+		});
+
+		backwardCnt.traverse([this](const std::vector<uint32_t>& key, std::pair<uint32_t, float>& value)
+		{
+			if (key.size() <= 1)
+			{
+				value.second = 0;
+				return vtm_traverse_ret::keep_go;
+			}
+			const auto* parent = backwardCnt.find(key.begin(), key.end() - 1);
 			float ll = log(value.first / (float)parent->first);
 			value.second = (parent->second * (key.size() - 2) + ll) / (key.size() - 1);
 			return vtm_traverse_ret::keep_go;
@@ -108,35 +140,44 @@ public:
 	std::vector<Collocation> getCollocations(size_t minCnt, float minScore) const
 	{
 		std::vector<Collocation> ret;
-		treeCnt.traverse([this, minCnt, minScore, &ret](const std::vector<uint32_t>& key, const std::pair<uint32_t, float>& value)
+		const auto& calcEntropy = [](const std::pair<vtmap::child_iterator, vtmap::child_iterator>& be, size_t populate)
 		{
-			if (key.size() <= 1) return vtm_traverse_ret::keep_go;
-			if (key.size() >= maxLen) return vtm_traverse_ret::skip_children;
-			if (value.first * key.size() < minCnt) return vtm_traverse_ret::skip_children;
-			auto be = treeCnt.findChild(key.begin(), key.end());
 			float entropy = 0;
 			for (auto it = be.first; it != be.second; ++it)
 			{
 				auto ch = *it;
-				if (ch.first == 0) // for unknown words
+				if (ch.first <= 2) // for unknown words or end of sent
 				{
-					float p = ch.second.first / (float)value.first;
+					float p = ch.second.first / (float)populate;
 					entropy += -log(p / 4) * p;
 				}
 				else
 				{
-					float p = ch.second.first / (float)value.first;
+					float p = ch.second.first / (float)populate;
 					entropy += -log(p) * p;
 				}
 			}
-			float score = value.second + log(entropy + 1e-10f);
+			return entropy;
+		};
+
+		forwardCnt.traverse([this, minCnt, minScore, &ret, &calcEntropy](const std::vector<uint32_t>& key, const std::pair<uint32_t, float>& value)
+		{
+			if (key.size() <= 1) return vtm_traverse_ret::keep_go;
+			if (key.size() >= maxLen) return vtm_traverse_ret::skip_children;
+			if (value.first * key.size() < minCnt) return vtm_traverse_ret::skip_children;
+			
+			float backwardCohesion = backwardCnt.find(key.rbegin(), key.rend())->second;
+			float entropy = calcEntropy(forwardCnt.findChild(key.begin(), key.end()), value.first);
+			float backwardEntropy = calcEntropy(backwardCnt.findChild(key.rbegin(), key.rend()), value.first);
+			float score = value.second + backwardCohesion + log(entropy + 1e-10f) + log(backwardEntropy + 1e-10f);
+			
 			if (score < minScore) return vtm_traverse_ret::keep_go;
 			std::vector<const unitType*> ws(key.size());
 			transform(key.begin(), key.end(), ws.begin(), [this](uint32_t k)
 			{
 				return &vocab.getStr(k);
 			});
-			ret.emplace_back(ws, value.first, value.second, entropy, score);
+			ret.emplace_back(ws, value.first, value.second, entropy, backwardCohesion, backwardEntropy, score);
 			return vtm_traverse_ret::keep_go;
 		});
 
@@ -147,7 +188,9 @@ public:
 		return ret;
 	}
 
-	const unitType* getUNKWord() const { return &vocab.getStr(0); }
+	const unitType* getBEGWord() const { return &vocab.getStr(0); }
+	const unitType* getENDWord() const { return &vocab.getStr(1); }
+	const unitType* getUNKWord() const { return &vocab.getStr(2); }
 
 	std::string toString(const unitType* ut) const
 	{

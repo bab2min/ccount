@@ -449,15 +449,18 @@ void colloc(const Args& args)
 	colExt.updateCohesion();
 	auto printResult = [&](ostream& out)
 	{
+		auto unk = colExt.getUNKWord();
 		for (auto& c : colExt.getCollocations(args.threshold, -50))
 		{
-			if (find(c.words.begin(), c.words.end(), colExt.getUNKWord()) != c.words.end()) continue;
+			if (find_if(c.words.begin(), c.words.end(), [unk](auto p) { return p <= unk; }) != c.words.end()) continue;
 
 			for (auto& p : c.words)
 			{
 				out << colExt.toString(p) << ' ';
 			}
-			out << '\t' << c.score << '\t' << c.cnt << '\t' << c.logCohesion << '\t' << c.entropy << endl;
+			out << '\t' << c.score << '\t' << c.cnt
+				<< '\t' << c.logCohesion << '\t' << c.entropy
+				<< '\t' << c.backwardLogCohesion << '\t' << c.backwardEntropy << endl;
 		}
 	};
 	if (args.output.empty()) printResult(cout);
@@ -516,15 +519,18 @@ void collocChr(const Args& args)
 	colExt.updateCohesion();
 	auto printResult = [&](ostream& out)
 	{
+		auto unk = colExt.getUNKWord();
 		for (auto& c : colExt.getCollocations(args.threshold, -50))
 		{
-			if (find(c.words.begin(), c.words.end(), colExt.getUNKWord()) != c.words.end()) continue;
+			if (find_if(c.words.begin(), c.words.end(), [unk](auto p) { return p <= unk; }) != c.words.end()) continue;
 
 			for (auto& p : c.words)
 			{
 				out << colExt.toString(p);
 			}
-			out << '\t' << c.score << '\t' << c.cnt << '\t' << c.logCohesion << '\t' << c.entropy << endl;
+			out << '\t' << c.score << '\t' << c.cnt 
+				<< '\t' << c.logCohesion << '\t' << c.entropy
+				<< '\t' << c.backwardLogCohesion << '\t' << c.backwardEntropy << endl;
 		}
 	};
 	if (args.output.empty()) printResult(cout);
