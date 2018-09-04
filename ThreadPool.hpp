@@ -1,6 +1,11 @@
 #ifndef THREAD_POOL_H
 #define THREAD_POOL_H
 
+/*
+A simple C++11 Thread Pool implementation(https://github.com/progschj/ThreadPool)
+modified by bab2min to have additional parameter threadId
+*/
+
 #include <vector>
 #include <queue>
 #include <memory>
@@ -18,7 +23,7 @@ public:
 	auto enqueue(F&& f, Args&&... args)
 		->std::future<typename std::result_of<F(size_t, Args...)>::type>;
 	~ThreadPool();
-	size_t getNumThread() const { return workers.size(); }
+	size_t getNumWorkers() const { return workers.size(); }
 private:
 	// need to keep track of threads so we can join them
 	std::vector< std::thread > workers;
@@ -37,21 +42,23 @@ inline ThreadPool::ThreadPool(size_t threads)
 {
 	for (size_t i = 0; i < threads; ++i)
 		workers.emplace_back([this, i]
+	{
+		for (;;)
 		{
-			for (;;)
+			std::function<void(size_t)> task;
 			{
-				std::function<void(size_t)> task;
-				{
-					std::unique_lock<std::mutex> lock(this->queue_mutex);
-					this->condition.wait(lock,
-						[this] { return this->stop || !this->tasks.empty(); });
-					if (this->stop && this->tasks.empty()) return;
-					task = std::move(this->tasks.front());
-					this->tasks.pop();
-				}
-				task(i);
+				std::unique_lock<std::mutex> lock(this->queue_mutex);
+				this->condition.wait(lock,
+					[this] { return this->stop || !this->tasks.empty(); });
+				if (this->stop && this->tasks.empty()) return;
+				task = std::move(this->tasks.front());
+				this->tasks.pop();
 			}
-		});
+			//std::cout << "Start #" << i << std::endl;
+			task(i);
+			//std::cout << "End #" << i << std::endl;
+		}
+	});
 }
 
 // add new work item to the pool
@@ -88,5 +95,68 @@ inline ThreadPool::~ThreadPool()
 	for (std::thread &worker : workers)
 		worker.join();
 }
+
+class ReusableThread {
+public:
+	ReusableThread() : stop(false)
+	{
+		worker = std::thread{ [this]
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			while (!stop || gTask)
+			{
+				if (gTask)
+				{
+					std::function<void()> task = std::move(gTask);
+					task();
+				}
+				else
+				{
+					condition.wait(lock);
+				}
+				//std::cout << "Start #" << std::this_thread::get_id() << std::endl;
+
+				//std::cout << "End #" << std::this_thread::get_id() << std::endl;
+			}
+		} };
+	}
+
+	template<class F, class... Args>
+	auto setWork(F&& f, Args&&... args)->std::future<typename std::result_of<F(Args...)>::type>
+	{
+		using return_type = typename std::result_of<F(Args...)>::type;
+
+		auto task = std::make_shared< std::packaged_task<return_type()> >(
+			std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+
+		std::future<return_type> res = task->get_future();
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			if (stop) throw std::runtime_error("enqueue on stopped ThreadPool");
+			gTask = [task]() { (*task)(); };
+		}
+		condition.notify_all();
+		return res;
+	}
+	~ReusableThread()
+	{
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			stop = true;
+		}
+		condition.notify_all();
+		worker.join();
+	}
+private:
+	std::thread worker;
+	// the task queue
+	std::function<void()> gTask;
+
+	// synchronization
+	std::mutex queue_mutex;
+	std::condition_variable condition;
+	bool stop;
+};
+
 
 #endif

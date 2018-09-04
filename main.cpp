@@ -6,6 +6,7 @@
 #include "cxxopts.hpp"
 #include "utils.h"
 #include "CollocationExtractor.h"
+#include "KWordDetector.h"
 
 using namespace std;
 
@@ -411,56 +412,45 @@ void pmiCoherence(const Args& args)
 
 void colloc(const Args& args)
 {
-	CollocationExtractor<false> colExt(args.maxng);
+	KWordDetector kwd(args.threshold, args.maxng, 0.1, args.worker);
 	ifstream infile{ args.input };
-	cerr << "Scanning..." << endl;
+	size_t numLine = 0;
+	auto result = kwd.extractWords([&infile, &args, &numLine](size_t id)->string
+	{
+		if (id == 0)
+		{
+			infile.clear();
+			infile.seekg(0);
+			numLine = 1;
+		}
+		string line;
+		while (1)
+		{
+			if (numLine >= args.maxline) return {};
+			if (!getline(infile, line)) return {};
+			if (numLine % 1000 == 0) cerr << "Line " << numLine << endl;
+			numLine++;
+			auto f = selectField(line, args.field);
+			if (f.empty())
+			{
+				cerr << "Line " << numLine << ": no field..." << endl;
+			}
+			else return f;
+		}
+	});
+
 	
-	auto fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
-	{
-		auto f = selectField(line, args.field);
-		if (f.empty())
-		{
-			cerr << "Line " << numLine << ": no field..." << endl;
-			return;
-		}
-
-		stringstream ss{ f };
-		colExt.countWords(istream_iterator<string>{ss}, istream_iterator<string>{});
-	});
-
-	colExt.shrinkDict(args.threshold);
-
-	cerr << "Counting..." << endl;
-	infile.clear();
-	infile.seekg(0);
-	fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
-	{
-		auto f = selectField(line, args.field);
-		if (f.empty())
-		{
-			cerr << "Line " << numLine << ": no field..." << endl;
-			return;
-		}
-		stringstream ss{ f };
-		colExt.countNgrams(istream_iterator<string>{ss}, istream_iterator<string>{});
-	});
-
-	cerr << "Calculating..." << endl;
-	colExt.updateCohesion();
 	auto printResult = [&](ostream& out)
 	{
-		auto unk = colExt.getUNKWord();
-		for (auto& c : colExt.getCollocations(args.threshold, -50))
+		for (auto& r : result)
 		{
-			if (find_if(c.words.begin(), c.words.end(), [unk](auto p) { return p <= unk; }) != c.words.end()) continue;
-
-			for (auto& p : c.words)
+			for (auto& p : r.form)
 			{
-				out << colExt.toString(p) << ' ';
+				out << p << ' ';
 			}
-			out << '\t' << c.score << '\t' << c.cnt
-				<< '\t' << c.logCohesion << '\t' << c.entropy
-				<< '\t' << c.backwardLogCohesion << '\t' << c.backwardEntropy << endl;
+			out << '\t' << r.score << '\t' << r.freq
+				<< '\t' << r.lCohesion << '\t' << r.rCohesion
+				<< '\t' << r.lBranch << '\t' << r.rBranch << endl;
 		}
 	};
 	if (args.output.empty()) printResult(cout);

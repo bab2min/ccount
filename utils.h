@@ -1,11 +1,11 @@
 #pragma once
 #include "ThreadPool.hpp"
 
-template<class KeyType = std::string>
+template<class KeyType = std::string, class ValueType = int32_t>
 class WordDictionary
 {
 protected:
-	std::map<KeyType, int> word2id;
+	std::map<KeyType, ValueType> word2id;
 	std::vector<KeyType> id2word;
 	std::mutex mtx;
 public:
@@ -25,14 +25,14 @@ public:
 		return *this;
 	}
 
-	enum { npos = (size_t)-1 };
-	int add(const KeyType& str)
+	enum { npos = (ValueType)-1 };
+	ValueType add(const KeyType& str)
 	{
 		if (word2id.emplace(str, word2id.size()).second) id2word.emplace_back(str);
 		return word2id.size() - 1;
 	}
 
-	int getOrAdd(const KeyType& str)
+	ValueType getOrAdd(const KeyType& str)
 	{
 		std::lock_guard<std::mutex> lg(mtx);
 		auto it = word2id.find(str);
@@ -41,10 +41,10 @@ public:
 	}
 
 	template<class Iter>
-	std::vector<int> getOrAdds(Iter begin, Iter end)
+	std::vector<ValueType> getOrAdds(Iter begin, Iter end)
 	{
 		std::lock_guard<std::mutex> lg(mtx);
-		std::vector<int> ret;
+		std::vector<ValueType> ret;
 		for (; begin != end; ++begin)
 		{
 			auto it = word2id.find(*begin);
@@ -54,7 +54,28 @@ public:
 		return ret;
 	}
 
-	int get(const KeyType& str) const
+	template<class Iter>
+	std::vector<ValueType> getOrAddsWithoutLock(Iter begin, Iter end)
+	{
+		std::vector<ValueType> ret;
+		for (; begin != end; ++begin)
+		{
+			auto it = word2id.find(*begin);
+			if (it != word2id.end()) ret.emplace_back(it->second);
+			else ret.emplace_back(add(*begin));
+		}
+		return ret;
+	}
+
+	template<class Func>
+	void withLock(const Func& f)
+	{
+		std::lock_guard<std::mutex> lg(mtx);
+		f();
+	}
+
+
+	ValueType get(const KeyType& str) const
 	{
 		auto it = word2id.find(str);
 		if (it != word2id.end()) return it->second;

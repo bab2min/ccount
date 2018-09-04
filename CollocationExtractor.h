@@ -11,6 +11,7 @@ class CollocationExtractor
 private:
 	WordDictionary<unitType> vocab;
 	std::vector<uint32_t> wordCnt;
+	//std::unordered_map<std::pair<int32_t, int32_t>, uint32_t> bigramCnt;
 	vtmap forwardCnt;
 	vtmap backwardCnt;
 	size_t totCnt = 0;
@@ -65,6 +66,17 @@ public:
 		if (wordCnt.size() <= max_id) wordCnt.resize(max_id + 1);
 		for (auto i : ids) wordCnt[i]++;
 		totCnt += ids.size();
+	}
+
+	template<class Iter>
+	void countBigram(Iter wBegin, Iter wEnd)
+	{
+		int bId = *wBegin++;
+		for (; wBegin != wEnd; ++wBegin)
+		{
+			++bigramCnt[make_pair(bId, *wBegin)];
+			bId = *wBegin;
+		}
 	}
 
 	void shrinkDict(size_t cutOff)
