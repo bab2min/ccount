@@ -1,6 +1,7 @@
 #pragma once
 #include "utils.h"
 #include "ThreadPool.hpp"
+#include <cstring>
 
 namespace std
 {
@@ -9,7 +10,7 @@ namespace std
 	{
 		size_t operator()(const pair<uint16_t, uint16_t>& o) const
 		{
-			return hash_value(o.first) | (hash_value(o.second) << 16);
+			return hash<uint16_t>{}(o.first) | (hash<uint16_t>{}(o.second) << 16);
 		}
 	};
 }
@@ -192,24 +193,23 @@ class KWordDetector
 protected:
 	size_t minCnt, maxWordLen;
 	float minScore;
-	mutable ThreadPool workers;
+	size_t numThread;
 
 	template<class LocalData, class FuncReader, class FuncProc>
 	std::vector<LocalData> readProc(const FuncReader& reader, const FuncProc& processor, LocalData&& ld = {}) const
 	{
+		ThreadPool workers(numThread);
 		std::vector<LocalData> ldByTid(workers.getNumWorkers(), ld);
-		std::vector<std::future<void>> futures(workers.getNumWorkers() * 4);
 		for (size_t id = 0; ; ++id)
 		{
 			auto ustr = reader(id);
 			if (ustr.empty()) break;
-			futures[id % futures.size()] = workers.enqueue([this, ustr, id, &ldByTid, &processor](size_t tid)
+			workers.enqueue([this, ustr, id, &ldByTid, &processor](size_t tid)
 			{
 				auto& ld = ldByTid[tid];
 				processor(ustr, id, ld);
 			});
 		}
-		for (auto& f : futures) f.get();
 		return ldByTid;
 	}
 	void countUnigram(Counter&, const std::function<std::string(size_t)>& reader) const;
@@ -235,7 +235,7 @@ public:
 	KWordDetector(size_t _minCnt = 10, size_t _maxWordLen = 10, float _minScore = 0.1f,
 		size_t _numThread = 0)
 		: minCnt(_minCnt), maxWordLen(_maxWordLen), minScore(_minScore),
-		workers(_numThread ? _numThread : std::thread::hardware_concurrency())
+		numThread(_numThread ? _numThread : std::thread::hardware_concurrency())
 	{}
 	void setParameters(size_t _minCnt = 10, size_t _maxWordLen = 10, float _minScore = 0.1f)
 	{

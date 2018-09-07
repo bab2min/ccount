@@ -33,9 +33,6 @@
     <ClInclude Include="utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CollocationExtractor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="vectorTreeMap.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>

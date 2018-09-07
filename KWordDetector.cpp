@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "KWordDetector.h"
-#include "Utils.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -47,7 +47,7 @@ void KWordDetector::countUnigram(Counter& cdata, const function<string(size_t)>&
 
 void KWordDetector::countBigram(Counter& cdata, const function<string(size_t)>& reader) const
 {
-	auto ldBigram = readProc<unordered_map<pair<uint16_t, uint16_t>, uint32_t>>(reader, [this, &cdata](string ustr, size_t id, unordered_map<pair<uint16_t, uint16_t>, uint32_t>& ld)
+	auto ldBigram = readProc<unordered_map<pair<uint16_t, uint16_t>, uint32_t>>(reader, [this, &cdata](string ustr, size_t , unordered_map<pair<uint16_t, uint16_t>, uint32_t>& ld)
 	{
 		stringstream ss{ ustr };
 		istream_iterator<string> begin{ ss }, end{};
@@ -212,6 +212,7 @@ vector<KWordDetector::WordInfo> KWordDetector::extractWords(const std::function<
 	for (auto it = cdata.forwardCnt.begin(); it != cdata.forwardCnt.end(); ++it)
 	{
 		auto& p = *it;
+		if (p.first.size() >= maxWordLen) continue;
 		if (p.second < minCnt) continue;
 		auto bit = cdata.backwardCnt.find({ p.first.rbegin(), p.first.rend() });
 		if (bit == cdata.backwardCnt.end()) continue;

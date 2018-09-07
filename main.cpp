@@ -5,7 +5,6 @@
 #include "ThreadPool.hpp"
 #include "cxxopts.hpp"
 #include "utils.h"
-#include "CollocationExtractor.h"
 #include "KWordDetector.h"
 
 using namespace std;
@@ -461,77 +460,6 @@ void colloc(const Args& args)
 	}
 }
 
-
-void collocChr(const Args& args)
-{
-	CollocationExtractor<true> colExt(args.maxng);
-	ifstream infile{ args.input };
-	cerr << "Scanning..." << endl;
-
-	auto fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
-	{
-		auto f = selectField(line, args.field);
-		if (f.empty())
-		{
-			cerr << "Line " << numLine << ": no field..." << endl;
-			return;
-		}
-		stringstream ss{ f };
-		for (auto it = istream_iterator<string>{ ss }; it != istream_iterator<string>{}; ++it)
-		{
-			auto ustr = wstring_convert<codecvt_utf8<int32_t>, int32_t>{}.from_bytes(*it);
-			colExt.countWords(ustr.begin(), ustr.end());
-		}
-	});
-
-	colExt.shrinkDict(args.threshold);
-
-	cerr << "Counting..." << endl;
-	infile.clear();
-	infile.seekg(0);
-	fcnt = scanText<int>(infile, 1, args.maxline, [&args, &colExt](int ld, string line, size_t numLine)
-	{
-		auto f = selectField(line, args.field);
-		if (f.empty())
-		{
-			cerr << "Line " << numLine << ": no field..." << endl;
-			return;
-		}
-		stringstream ss{ f };
-		for (auto it = istream_iterator<string>{ ss }; it != istream_iterator<string>{}; ++it)
-		{
-			auto ustr = wstring_convert<codecvt_utf8<int32_t>, int32_t>{}.from_bytes(*it);
-			colExt.countNgrams(ustr.begin(), ustr.end());
-		}
-	});
-
-	cerr << "Calculating..." << endl;
-	colExt.updateCohesion();
-	auto printResult = [&](ostream& out)
-	{
-		auto unk = colExt.getUNKWord();
-		for (auto& c : colExt.getCollocations(args.threshold, -50))
-		{
-			if (find_if(c.words.begin(), c.words.end(), [unk](auto p) { return p <= unk; }) != c.words.end()) continue;
-
-			for (auto& p : c.words)
-			{
-				out << colExt.toString(p);
-			}
-			out << '\t' << c.score << '\t' << c.cnt 
-				<< '\t' << c.logCohesion << '\t' << c.entropy
-				<< '\t' << c.backwardLogCohesion << '\t' << c.backwardEntropy << endl;
-		}
-	};
-	if (args.output.empty()) printResult(cout);
-	else
-	{
-		ofstream of{ args.output };
-		printResult(of);
-	}
-}
-
-
 void simpleCount(const Args& args)
 {
 	struct LD
@@ -683,7 +611,6 @@ int main(int argc, char* argv[])
 
 	if (args.mode == "count") simpleCount(args);
 	else if (args.mode == "colloc") colloc(args);
-	else if (args.mode == "collocChr") collocChr(args);
 	else if (args.mode == "pmi") pmi(args);
 	else if (args.mode == "pmishow") pmiShow(args);
 	else if (args.mode == "pmich") pmiCoherence(args);

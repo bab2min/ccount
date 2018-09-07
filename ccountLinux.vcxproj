@@ -85,13 +85,13 @@
     <TargetExt />
   </PropertyGroup>
   <ItemGroup>
-    <ClCompile Include="CollocationExtractor.cpp" />
+    <ClCompile Include="KWordDetector.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CollocationExtractor.h" />
     <ClInclude Include="cxxopts.hpp" />
+    <ClInclude Include="KWordDetector.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ThreadPool.hpp" />
     <ClInclude Include="utils.h" />

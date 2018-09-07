@@ -151,7 +151,6 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CollocationExtractor.h" />
     <ClInclude Include="cxxopts.hpp" />
     <ClInclude Include="KWordDetector.h" />
     <ClInclude Include="stdafx.h" />
