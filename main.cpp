@@ -54,12 +54,13 @@ void countCooc(vector<uint32_t>& counter, size_t nVocab, const vector<int>& ids)
 struct Args
 {
 	string input, output, model;
-	int field = 0;
+	int field = -1;
 	size_t maxline = -1;
 	int worker = thread::hardware_concurrency();
 	size_t threshold = 100;
 	string mode;
 	int maxng = 5;
+	int window = 5;
 };
 
 void cooc(const Args& args)
@@ -316,6 +317,137 @@ void pmi(const Args& args)
 	{
 		int16_t s = max(min(int(f * 1024), 32767), -32768);
 		out.write((const char*)&s, 2);
+	}
+}
+
+void pmiWindow(const Args& args)
+{
+	struct LD
+	{
+		vector<uint32_t> freq;
+		size_t nWords = 0;
+	};
+	WordDictionary<> rdict;
+	vector<uint32_t> wordFreq;
+	size_t totWords = 0;
+	size_t nVocab = 0;
+	ifstream infile{ args.input };
+	cerr << "Scanning..." << endl;
+	{
+		WordDictionary<> dict;
+		auto fcnt = scanText<LD>(infile, args.worker, args.maxline, [&dict, &args](LD& ld, string line, size_t numLine)
+		{
+			auto f = selectField(line, args.field);
+			if (f.empty())
+			{
+				cerr << "Line " << numLine << ": no field..." << endl;
+				return;
+			}
+			istringstream ss{ f };
+			auto ids = dict.getOrAdds(istream_iterator<string>{ss}, istream_iterator<string>{});
+			size_t maxId = *max_element(ids.begin(), ids.end());
+			if (maxId >= ld.freq.size()) ld.freq.resize(maxId + 1);
+			for (auto id : ids)
+			{
+				++ld.freq[id];
+			}
+			ld.nWords += ids.size();
+		});
+		auto&& freq = fcnt[0].freq;
+		totWords = fcnt[0].nWords;
+		for (size_t i = 1; i < fcnt.size(); ++i)
+		{
+			if (freq.size() < fcnt[i].freq.size()) freq.resize(fcnt[i].freq.size());
+			auto it = freq.begin();
+			for (auto&& p : fcnt[i].freq)
+			{
+				*it++ += p;
+			}
+			totWords += fcnt[i].nWords;
+		}
+
+		vector<pair<size_t, size_t>> countSorted;
+		for (size_t i = 0; i < freq.size(); ++i)
+		{
+			countSorted.emplace_back(i, freq[i]);
+		}
+		sort(countSorted.begin(), countSorted.end(), [](const auto& a, const auto& b)
+		{
+			return a.second > b.second;
+		});
+		for (auto&& p : countSorted)
+		{
+			if (p.second < args.threshold) break;
+			rdict.add(dict.getStr(p.first));
+			wordFreq.emplace_back(p.second);
+			++nVocab;
+		}
+	}
+	cout << "Vocab size: " << nVocab << endl;
+	cerr << "Counting..." << endl;
+	infile.clear();
+	infile.seekg(0);
+	auto fcnt = scanText<map<pair<uint32_t, uint32_t>, uint32_t>>(infile, 1, args.maxline, [&rdict, &args, &nVocab](map<pair<uint32_t, uint32_t>, uint32_t>& ld, string line, size_t numLine)
+	{
+		auto f = selectField(line, args.field);
+		if (f.empty())
+		{
+			cerr << "Line " << numLine << ": no field..." << endl;
+			return;
+		}
+		istringstream ss{ f };
+		vector<int32_t> wids;
+		transform(istream_iterator<string>{ ss }, istream_iterator<string>{}, back_inserter(wids), [&rdict](auto w)
+		{
+			return rdict.get(w);
+		});
+		for (size_t i = 0; i < wids.size(); ++i)
+		{
+			if (wids[i] < 0) continue;
+			size_t jEnd = min(i + 1 + args.window, wids.size());
+			for (size_t j = i + 1; j < jEnd; ++j)
+			{
+				if (wids[j] < 0) continue;
+				uint32_t a = wids[i], b = wids[j];
+				if (a == b) continue;
+				if (a > b) swap(a, b);
+				++ld[make_pair(a, b)];
+			}
+		}
+	});
+
+	cerr << "Calculating..." << endl;
+
+	vector<pair<pair<uint32_t, uint32_t>, float>> pmis;
+	for (auto& p : fcnt[0])
+	{
+		float pmi = log(p.second * (float)totWords / wordFreq[p.first.first] / wordFreq[p.first.second]) / log(totWords / (float)p.second);
+		if (pmi < 0) continue;
+		pmis.emplace_back(p.first, pmi);
+	}
+	fcnt.clear();
+
+	cerr << "Sorting..." << endl;
+	sort(pmis.begin(), pmis.end(), [](const auto& a, const auto& b)
+	{
+		return a.second > b.second;
+	});
+
+	cerr << "Writing..." << endl;
+
+	const auto& printResult = [&](ostream& os)
+	{
+		for (auto& p : pmis)
+		{
+			os << rdict.getStr(p.first.first) << '\t' << rdict.getStr(p.first.second) << '\t' << p.second << endl;
+		}
+	};
+
+	if (args.output.empty()) printResult(cout);
+	else
+	{
+		ofstream of{ args.output };
+		printResult(of);
 	}
 }
 
@@ -614,6 +746,7 @@ int main(int argc, char* argv[])
 	else if (args.mode == "pmi") pmi(args);
 	else if (args.mode == "pmishow") pmiShow(args);
 	else if (args.mode == "pmich") pmiCoherence(args);
+	else if (args.mode == "pmiwindow") pmiWindow(args);
 	else cooc(args);
     return 0;
 }
