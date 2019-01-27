@@ -559,7 +559,7 @@ void colloc(const Args& args)
 		{
 			if (numLine >= args.maxline) return {};
 			if (!getline(infile, line)) return {};
-			if (numLine % 1000 == 0) cerr << "Line " << numLine << endl;
+			if (numLine % 10000 == 0) cerr << "Line " << numLine << endl;
 			numLine++;
 			auto f = selectField(line, args.field);
 			if (f.empty())
@@ -682,10 +682,6 @@ int main(int argc, char* argv[])
 		options
 			.positional_help("[mode input field threshold]")
 			.show_positional_help();
-		auto vpmi = cxxopts::value<string>();
-		vpmi->implicit_value("pmi");
-		auto vcll = cxxopts::value<string>();
-		vcll->implicit_value("cll");
 		options.add_options()
 			("i,input", "Input File", cxxopts::value<string>(), "Input file path that contains documents per line")
 			("m,model", "Model File", cxxopts::value<string>(), "Input model file path")
@@ -695,7 +691,7 @@ int main(int argc, char* argv[])
 			("t,threshold", "Minimum number ", cxxopts::value<int>())
 			("h,help", "Help")
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
-			("mode", "Mode (count, cooccur, colloc, collocChr, pmi, pmishow, pmich)", cxxopts::value<string>())
+			("mode", "Mode (count, cooccur, colloc, collocChr, pmi, pmishow, pmich)", cxxopts::value<string>()->implicit_value("pmi"))
 			("maxng",  "Max NGram Length", cxxopts::value<int>())
 			;
 
