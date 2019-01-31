@@ -123,10 +123,17 @@ void KWordDetector::countNgram(Counter& cdata, const function<string(size_t)>& r
 		}
 	});
 
-	cdata.forwardCnt.insert(cdata.forwardAtmCnt.begin(), cdata.forwardAtmCnt.end());
-	cdata.forwardAtmCnt.clear();
-	cdata.backwardCnt.insert(cdata.backwardAtmCnt.begin(), cdata.backwardAtmCnt.end());
-	cdata.backwardAtmCnt.clear();
+	for (auto it = cdata.forwardAtmCnt.begin(); it != cdata.forwardAtmCnt.end();)
+	{
+		cdata.forwardCnt.emplace(move(*it));
+		it = cdata.forwardAtmCnt.erase(it);
+	}
+
+	for (auto it = cdata.backwardAtmCnt.begin(); it != cdata.backwardAtmCnt.end();)
+	{
+		cdata.backwardCnt.emplace(move(*it));
+		it = cdata.backwardAtmCnt.erase(it);
+	}
 
 	u16light prefixToErase = {};
 	for (auto it  = cdata.forwardCnt.cbegin(); it != cdata.forwardCnt.cend();)
