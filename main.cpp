@@ -61,6 +61,7 @@ struct Args
 	string mode;
 	int maxng = 5;
 	int window = 5;
+	float scoreThreshold = 0.1;
 };
 
 void cooc(const Args& args)
@@ -541,9 +542,9 @@ void pmiCoherence(const Args& args)
 	cout << "========" << endl << "Total Average PMI: " << avgPMI / totCnt << endl;
 }
 
-void colloc(const Args& args)
+void colloc(const Args& args, bool npmi = false)
 {
-	KWordDetector kwd(args.threshold, args.maxng, 0.1, args.worker);
+	KWordDetector kwd(args.threshold, args.maxng, args.scoreThreshold, npmi, args.worker);
 	ifstream infile{ args.input };
 	size_t numLine = 0;
 	auto result = kwd.extractWords([&infile, &args, &numLine](size_t id)->string
@@ -564,7 +565,7 @@ void colloc(const Args& args)
 			auto f = selectField(line, args.field);
 			if (f.empty())
 			{
-				cerr << "Line " << numLine << ": no field..." << endl;
+				//cerr << "Line " << numLine << ": no field..." << endl;
 			}
 			else return f;
 		}
@@ -691,8 +692,9 @@ int main(int argc, char* argv[])
 			("t,threshold", "Minimum number ", cxxopts::value<int>())
 			("h,help", "Help")
 			("w,worker", "Number of Workes", cxxopts::value<int>(), "The number of workers(thread) for inferencing model, default value is 0 which means the number of cores in system")
-			("mode", "Mode (count, cooccur, colloc, collocChr, pmi, pmishow, pmich)", cxxopts::value<string>()->implicit_value("pmi"))
-			("maxng",  "Max NGram Length", cxxopts::value<int>())
+			("mode", "Mode (count, cooccur, colloc, collocNpmi, collocChr, pmi, pmishow, pmich)", cxxopts::value<string>()->implicit_value("pmi"))
+			("maxng", "Max NGram Length", cxxopts::value<int>())
+			("s,scoreThreshold", "", cxxopts::value <float> ())
 			;
 
 		options.parse_positional({ "mode", "input", "field", "threshold" });
@@ -722,6 +724,7 @@ int main(int argc, char* argv[])
 			READ_OPT(worker, int);
 			READ_OPT(threshold, int);
 			READ_OPT(maxng, int);
+			READ_OPT(scoreThreshold, float);
 		}
 		catch (const cxxopts::OptionException& e)
 		{
@@ -739,6 +742,7 @@ int main(int argc, char* argv[])
 
 	if (args.mode == "count") simpleCount(args);
 	else if (args.mode == "colloc") colloc(args);
+	else if (args.mode == "collocNpmi") colloc(args, true);
 	else if (args.mode == "pmi") pmi(args);
 	else if (args.mode == "pmishow") pmiShow(args);
 	else if (args.mode == "pmich") pmiCoherence(args);

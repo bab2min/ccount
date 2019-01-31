@@ -186,6 +186,7 @@ class KWordDetector
 	struct Counter
 	{
 		WordDictionary<std::string, uint32_t> chrDict;
+		size_t totNum = 0;
 		std::vector<uint32_t> cntUnigram;
 		std::unordered_set<std::pair<uint16_t, uint16_t>> candBigram;
 		std::map<u16light, uint32_t> forwardCnt, backwardCnt;
@@ -194,11 +195,12 @@ protected:
 	size_t minCnt, maxWordLen;
 	float minScore;
 	size_t numThread;
+	bool npmiScore = false;
 
 	template<class LocalData, class FuncReader, class FuncProc>
 	std::vector<LocalData> readProc(const FuncReader& reader, const FuncProc& processor, LocalData&& ld = {}) const
 	{
-		ThreadPool workers(numThread);
+		ThreadPool workers(numThread, numThread * 8);
 		std::vector<LocalData> ldByTid(workers.getNumWorkers(), ld);
 		for (size_t id = 0; ; ++id)
 		{
@@ -232,9 +234,9 @@ public:
 		{}
 	};
 
-	KWordDetector(size_t _minCnt = 10, size_t _maxWordLen = 10, float _minScore = 0.1f,
+	KWordDetector(size_t _minCnt = 10, size_t _maxWordLen = 10, float _minScore = 0.1f, bool _npmiScore = false,
 		size_t _numThread = 0)
-		: minCnt(_minCnt), maxWordLen(_maxWordLen), minScore(_minScore),
+		: minCnt(_minCnt), maxWordLen(_maxWordLen), minScore(_minScore), npmiScore(_npmiScore),
 		numThread(_numThread ? _numThread : std::thread::hardware_concurrency())
 	{}
 	void setParameters(size_t _minCnt = 10, size_t _maxWordLen = 10, float _minScore = 0.1f)

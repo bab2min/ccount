@@ -43,6 +43,7 @@ void KWordDetector::countUnigram(Counter& cdata, const function<string(size_t)>&
 	}
 	cerr << "Selected Vocab Size: " << cdata.cntUnigram.size() << endl;
 	cdata.chrDict = move(chrDictShrink);
+	cdata.totNum = accumulate(cdata.cntUnigram.begin(), cdata.cntUnigram.end(), 0);
 }
 
 void KWordDetector::countBigram(Counter& cdata, const function<string(size_t)>& reader) const
@@ -223,8 +224,20 @@ vector<KWordDetector::WordInfo> KWordDetector::extractWords(const std::function<
 		float forwardBranch = branchingEntropy(cdata.forwardCnt, it);
 		float backwardBranch = branchingEntropy(cdata.backwardCnt, bit);
 
-		float score = forwardCohesion * backwardCohesion;
-		score *= forwardBranch * backwardBranch;
+		float score;
+
+		if (npmiScore) // npmi
+		{
+			score = p.second;
+			for (auto c : p.first) score /= cdata.cntUnigram[c];
+			score = log(score) + (p.first.size() - 1) * log(cdata.totNum);
+			score /= log(cdata.totNum / (float)p.second) * (p.first.size() - 1);
+		}
+		else // cohesion
+		{
+			score = forwardCohesion * backwardCohesion;
+			score *= forwardBranch * backwardBranch;
+		}
 		if (score < minScore) continue;
 		vector<string> form;
 		form.reserve(p.first.size());
