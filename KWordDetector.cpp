@@ -6,40 +6,33 @@ using namespace std;
 
 void KWordDetector::countUnigram(Counter& cdata, const function<string(size_t)>& reader) const
 {
-	auto ldUnigram = readProc<vector<uint32_t>>(reader, [this, &cdata](string ustr, size_t id, vector<uint32_t>& ld)
+	auto ldUnigram = readProc<unordered_map<string, uint32_t>>(reader, [this, &cdata](string ustr, size_t id, unordered_map<string, uint32_t>& ld)
 	{
 		stringstream ss{ ustr };
 		istream_iterator<string> begin{ ss }, end{};
-		vector<uint32_t> ids = cdata.chrDict.getOrAdds(begin, end);
-		if (ids.empty()) return;
-		uint32_t maxId = *max_element(ids.begin(), ids.end());
-		if (ld.size() <= maxId) ld.resize(maxId + 1);
-		for (auto id : ids) ld[id]++;
+		for (; begin != end; ++begin)
+		{
+			++ld[*begin];
+		}
 	});
 
-	uint32_t maxId = 0;
-	for (auto& t : ldUnigram)
-	{
-		if (maxId < t.size()) maxId = t.size();
-	}
-	cerr << "Total Vocab Size: " << maxId << endl;
 	auto& unigramMerged = ldUnigram[0];
-	unigramMerged.resize(maxId);
 	for (size_t i = 1; i < ldUnigram.size(); ++i)
 	{
-		for (size_t n = 0; n < ldUnigram[i].size(); ++n) unigramMerged[n] += ldUnigram[i][n];
+		for (auto& p : ldUnigram[i]) unigramMerged[p.first] += p.second;
 	}
+	cerr << "Total Vocab Size: " << unigramMerged.size() << endl;
 
 	WordDictionary<string, uint32_t> chrDictShrink;
 	chrDictShrink.add("<UNK>");
 	chrDictShrink.add("<BEG>");
 	chrDictShrink.add("<END>");
 	cdata.cntUnigram.resize(3);
-	for (size_t i = 0; i < maxId; ++i)
+	for (auto& p : unigramMerged)
 	{
-		if (unigramMerged[i] < minCnt) continue;
-		chrDictShrink.add(cdata.chrDict.getStr(i));
-		cdata.cntUnigram.emplace_back(unigramMerged[i]);
+		if (p.second < minCnt) continue;
+		chrDictShrink.add(p.first);
+		cdata.cntUnigram.emplace_back(p.second);
 	}
 	cerr << "Selected Vocab Size: " << cdata.cntUnigram.size() << endl;
 	cdata.chrDict = move(chrDictShrink);
@@ -76,14 +69,25 @@ void KWordDetector::countBigram(Counter& cdata, const function<string(size_t)>& 
 	}
 }
 
+void atomicIncrease(map<u16light, atomic<uint32_t>>& m, u16light&& k, mutex& insertMtx)
+{
+	auto it = m.find(k);
+	if (it != m.end())
+	{
+		it->second++;
+	}
+	else
+	{
+		lock_guard<mutex> l{ insertMtx };
+		++m[k];
+	}
+}
+
 void KWordDetector::countNgram(Counter& cdata, const function<string(size_t)>& reader) const
 {
-	vector<ReusableThread> rt(2);
-	vector<future<void>> futures(2);
-	for (size_t id = 0; ; ++id)
+	mutex forwardInsertMtx, backwardInsertMtx;
+	auto ldNgram = readProc<size_t>(reader, [&](string ustr, size_t, size_t ld) 
 	{
-		auto ustr = reader(id);
-		if (ustr.empty()) break;
 		stringstream ss{ ustr };
 		istream_iterator<string> begin{ ss }, end{};
 		auto ids = make_shared<vector<uint16_t>>();
@@ -96,42 +100,34 @@ void KWordDetector::countNgram(Counter& cdata, const function<string(size_t)>& r
 		}
 		ids->emplace_back(2);
 
-		if (futures[0].valid()) futures[0].get();
-		futures[0] = rt[0].setWork([&, ids]()
+		for (size_t i = 1; i < ids->size(); ++i)
 		{
-			for (size_t i = 1; i < ids->size(); ++i)
+			if (!(*ids)[i]) continue;
+			for (size_t j = i + 2; j < min(i + 1 + maxWordLen, ids->size() + 1); ++j)
 			{
-				if (!(*ids)[i]) continue;
-				for (size_t j = i + 2; j < min(i + 1 + maxWordLen, ids->size() + 1); ++j)
-				{
-					if (!(*ids)[j - 1]) break;
-					++cdata.forwardCnt[{ids->begin() + i, ids->begin() + j}];
-					if (!cdata.candBigram.count(make_pair((*ids)[j - 2], (*ids)[j - 1]))) break;
-				}
+				if (!(*ids)[j - 1]) break;
+				atomicIncrease(cdata.forwardAtmCnt, { ids->begin() + i, ids->begin() + j }, forwardInsertMtx);
+				if (!cdata.candBigram.count(make_pair((*ids)[j - 2], (*ids)[j - 1]))) break;
 			}
-		});
-			
-		if (futures[1].valid()) futures[1].get();
-		futures[1] = rt[1].setWork([&, ids]()
-		{
-			for (size_t i = 1; i < ids->size(); ++i)
-			{
-				if (!ids->rbegin()[i]) continue;
-				for (size_t j = i + 2; j < min(i + 1 + maxWordLen, ids->size() + 1); ++j)
-				{
-					if (!ids->rbegin()[j - 1]) break;
-					++cdata.backwardCnt[{ids->rbegin() + i, ids->rbegin() + j}];
-					if (!cdata.candBigram.count(make_pair(ids->rbegin()[j - 1], ids->rbegin()[j - 2]))) break;
-				}
-			}
-		});
-	}
+		}
 
-	for (auto& f : futures)
-	{
-		if (f.valid()) f.get();
-	}
-	
+		for (size_t i = 1; i < ids->size(); ++i)
+		{
+			if (!ids->rbegin()[i]) continue;
+			for (size_t j = i + 2; j < min(i + 1 + maxWordLen, ids->size() + 1); ++j)
+			{
+				if (!ids->rbegin()[j - 1]) break;
+				atomicIncrease(cdata.backwardAtmCnt, { ids->rbegin() + i, ids->rbegin() + j }, backwardInsertMtx);
+				if (!cdata.candBigram.count(make_pair(ids->rbegin()[j - 1], ids->rbegin()[j - 2]))) break;
+			}
+		}
+	});
+
+	cdata.forwardCnt.insert(cdata.forwardAtmCnt.begin(), cdata.forwardAtmCnt.end());
+	cdata.forwardAtmCnt.clear();
+	cdata.backwardCnt.insert(cdata.backwardAtmCnt.begin(), cdata.backwardAtmCnt.end());
+	cdata.backwardAtmCnt.clear();
+
 	u16light prefixToErase = {};
 	for (auto it  = cdata.forwardCnt.cbegin(); it != cdata.forwardCnt.cend();)
 	{

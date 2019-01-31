@@ -189,6 +189,7 @@ class KWordDetector
 		size_t totNum = 0;
 		std::vector<uint32_t> cntUnigram;
 		std::unordered_set<std::pair<uint16_t, uint16_t>> candBigram;
+		std::map<u16light, std::atomic<uint32_t>> forwardAtmCnt, backwardAtmCnt;
 		std::map<u16light, uint32_t> forwardCnt, backwardCnt;
 	};
 protected:
